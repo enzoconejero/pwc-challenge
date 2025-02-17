@@ -1,0 +1,17 @@
+# Python
+__pycache__
+build
+*.egg
+*.egg-info
+
+# PDM
+.pdm-python
+pdm.lock
+.venv
+
+# PyCharm
+.idea
+
+# Project
+data
+*.db
