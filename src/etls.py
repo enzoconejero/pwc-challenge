@@ -1,10 +1,9 @@
 import os
 from pathlib import Path
-from sys import platform
 
 import kagglehub
 import polars
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, text
 from sqlalchemy_orm.session import Session
 
 from src.model import SaleHistory, RawDB, DimPlatform, DimYear, DimGame, FactSales
@@ -70,8 +69,80 @@ def elt_dw():
         session.commit()
 
 
+def etl_vectordb():
+    import typesense
+
+    client = typesense.Client({
+        'nodes': [{
+            'host': 'localhost',
+            'port': '8108',
+            'protocol': 'http'
+        }],
+        'api_key': 'xyz',
+        'connection_timeout_seconds': 10
+    })
+
+    if 'games_sales' not in [c['name'] for c in client.collections.retrieve()]:
+        print('Create schema')
+        game_sales_schema = {
+            'name': 'games_sales',
+            'fields': [
+                {'name': 'game', 'type': 'string'},
+                {'name': 'publisher', 'type': 'string'},
+                {'name': 'rank', 'type': 'int32'},
+                {'name': 'platform', 'type': 'string'},
+                {'name': 'year', 'type': 'int32', 'facet': True},
+                {'name': 'total_sales', 'type': 'float'},
+                {'name': 'description', 'type': 'string'}
+            ],
+            'default_sorting_field': 'rank'
+        }
+
+        client.collections.create(game_sales_schema)
+
+    with engine.connect() as conn:
+        res = conn.execute(text("""
+            select 
+                dg.name, 
+                dg.rank, 
+                dg.publisher, 
+                dy.year, 
+                dp.name platform, 
+                fs.total_sales, 
+                dg.name || " (" || dy.year || ") - " || dp.name desc
+            from fact_sales fs
+            join dim_game dg on fs.game_id = dg.id
+            join dim_year dy on fs.year_id = dy.id
+            join dim_platform dp on fs.platform_id = dp.id
+        """)).fetchall()
+
+    docs = [
+        {
+            'game': game_sale_record[0],
+            'publisher': game_sale_record[2],
+            'rank': game_sale_record[1],
+            'platform': game_sale_record[4],
+            'year': game_sale_record[3],
+            'total_sales': game_sale_record[5],
+            'description': game_sale_record[6],
+        }
+        for game_sale_record in res
+    ]
+
+    client.collections["games_sales"].documents.import_(docs, {'action': 'upsert'})
+
+    search_params = {
+        'q': "carlos duty",
+        'query_by': 'description',
+        'filter_by': 'year :> 2000'
+    }
+
+    results = client.collections["games_sales"].documents.search(search_params)
+    print(results)
+
 if __name__ == '__main__':
-    RawDB.metadata.drop_all(engine)
-    etl_raw()
-    elt_dw()
+    # RawDB.metadata.drop_all(engine)
+    # etl_raw()
+    # elt_dw()
+    etl_vectordb()
 
