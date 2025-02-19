@@ -1,8 +1,9 @@
 
 from fastapi import FastAPI
 
-from src.etls import session
+from src.etls import etl_raw, etl_dw
 from src.model import SaleHistory
+from src.utils import DBProvider, TypesenseProvider
 
 app = FastAPI()
 
@@ -10,24 +11,35 @@ app = FastAPI()
 def health():
     return {'Hello World'}
 
+@app.post('/load_raw')
+def load_raw():
+    etl_raw()
+    return {'Raw loaded'}
+
+@app.post('/load_datawarehouse')
+def load_raw():
+    etl_dw()
+    return {'Data Warehouse loaded'}
+
 @app.get("/show_raw")
 def show_raw():
-    sample = session.query(SaleHistory).limit(10).all()
+    sample = DBProvider.raw.get_session().query(SaleHistory).limit(10).all()
     return {
         'sample_size': len(sample),
-        'sample': [s.as_dict() for s in sample]
+        'sample': [s.as_json() for s in sample]
     }
 
 @app.post('/sales/')
 def add_sale(sale: dict):
     print('On add sale')
+    db_session = DBProvider.raw.get_session()
 
     if "id" in sale:
         # Is an update
         _id = sale["id"]
-        sale_reg = session.query(SaleHistory).where(SaleHistory.id == _id).first()
+        sale_reg = db_session.query(SaleHistory).where(SaleHistory.id == _id).first()
         sale_reg.update_values(sale)
-        session.add(sale_reg)
+        db_session.add(sale_reg)
         print('Sale modification')
 
     else:
@@ -47,47 +59,33 @@ def add_sale(sale: dict):
             global_sales=sale.get('global_sales', 0),
         )
 
-        session.add(sale_reg)
-    session.commit()
+        db_session.add(sale_reg)
+    db_session.commit()
     print(sale_reg)
     print('return', sale_reg.as_json())
     return sale_reg.as_json()
 
 @app.get('/sales/{_id}')
 def get_sale(_id):
-    sale = session.query(SaleHistory).where(SaleHistory.id == _id).first()
+    sale = DBProvider.raw.get_session().query(SaleHistory).where(SaleHistory.id == _id).first()
     return sale.as_json()
 
 @app.delete("/sales/{_id}")
 def delete_sale(_id):
+    session = DBProvider.raw.get_session()
     session.query(SaleHistory).where(SaleHistory.id == _id).delete()
     session.commit()
     return {'deleted': _id}
 
 @app.get("/search/{query}")
 def search(query):
-    import typesense
-
-    client = typesense.Client({
-        'nodes': [{
-            'host': 'localhost',
-            'port': '8108',
-            'protocol': 'http'
-        }],
-        'api_key': 'xyz',
-        'connection_timeout_seconds': 10
-    })
-
     search_params = {
         'q': query,
         'query_by': 'description',
         'filter_by': 'year :> 2000'
     }
-
-    results = client.collections["games_sales"].documents.search(search_params)
-    response = {
-        r["document"]["description"] for r in results["hits"]
-    }
+    results = TypesenseProvider.get_client().collections["games_sales"].documents.search(search_params)
+    response = {r["document"]["description"] for r in results["hits"]}
     return response
 
 @app.get("/")

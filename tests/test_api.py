@@ -1,6 +1,11 @@
 from fastapi.testclient import TestClient
 from src.app import app
-from src.model import SaleHistory
+from src.model import SaleHistory, RawDB
+from src.utils import proj_path, DBConnector, DBProvider
+
+
+class TestRawDB(DBConnector):
+    url: str = f"sqlite:///{proj_path}/test_dw.db"
 
 client = TestClient(app)
 sale_example = SaleHistory(
@@ -21,13 +26,10 @@ def test_dummy():
     res = client.get('/')
     assert res.status_code == 200
 
-def test_get_sale():
-    res = client.get('/sales/1')
-    assert res.status_code == 200
-
 def test_crud_sale():
-    # print(sale_example.as_json())
-    # Create
+    DBProvider.raw = TestRawDB()
+    RawDB.metadata.create_all(DBProvider.raw.get_engine())
+
     res = client.post('/sales/', json=sale_example.as_json())
     print(res.json())
     assert res.status_code == 200

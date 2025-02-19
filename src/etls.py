@@ -3,14 +3,11 @@ from pathlib import Path
 
 import kagglehub
 import polars
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy_orm.session import Session
 
 from src.model import SaleHistory, RawDB, DimPlatform, DimYear, DimGame, FactSales
-from src.utils import sqlite_db_path
-
-engine = create_engine(f"sqlite:///{sqlite_db_path}", echo=True)
-session = Session(bind=engine)
+from src.utils import DBProvider, TypesenseProvider
 
 def etl_raw():
     """Download raw data from Kaggle and load into relational DB"""
@@ -25,6 +22,8 @@ def etl_raw():
 
     # Filter years
     df = df.filter(df['Year'].is_not_null()).rename(lambda x: x.lower())
+    engine = DBProvider.raw.get_engine()
+    session = Session(bind=engine)
     RawDB.metadata.create_all(engine)
 
     for row in df.rows(named=True):
@@ -32,8 +31,11 @@ def etl_raw():
 
     session.commit()
 
-def elt_dw():
+def etl_dw():
     """Load the Data Warehouse"""
+    engine = DBProvider.dw.get_engine()
+    session = Session(bind=engine)
+    RawDB.metadata.drop_all(engine)
     RawDB.metadata.create_all(engine)
     with engine.connect() as conn:
         # Platform
@@ -70,19 +72,10 @@ def elt_dw():
 
 
 def etl_vectordb():
-    import typesense
+    engine = DBProvider.dw.get_engine()
+    typesense_client = TypesenseProvider.get_client()
 
-    client = typesense.Client({
-        'nodes': [{
-            'host': 'localhost',
-            'port': '8108',
-            'protocol': 'http'
-        }],
-        'api_key': 'xyz',
-        'connection_timeout_seconds': 10
-    })
-
-    if 'games_sales' not in [c['name'] for c in client.collections.retrieve()]:
+    if 'games_sales' not in [c['name'] for c in typesense_client.collections.retrieve()]:
         print('Create schema')
         game_sales_schema = {
             'name': 'games_sales',
@@ -98,7 +91,7 @@ def etl_vectordb():
             'default_sorting_field': 'rank'
         }
 
-        client.collections.create(game_sales_schema)
+        typesense_client.collections.create(game_sales_schema)
 
     with engine.connect() as conn:
         res = conn.execute(text("""
@@ -129,20 +122,14 @@ def etl_vectordb():
         for game_sale_record in res
     ]
 
-    client.collections["games_sales"].documents.import_(docs, {'action': 'upsert'})
+    typesense_client.collections["games_sales"].documents.import_(docs, {'action': 'upsert'})
 
-    search_params = {
-        'q': "carlos duty",
-        'query_by': 'description',
-        'filter_by': 'year :> 2000'
-    }
 
-    results = client.collections["games_sales"].documents.search(search_params)
-    print(results)
+def _testmain():
+    etl_raw()
+    etl_dw()
+    etl_vectordb()
 
 if __name__ == '__main__':
-    # RawDB.metadata.drop_all(engine)
-    # etl_raw()
-    # elt_dw()
-    etl_vectordb()
+    _testmain()
 

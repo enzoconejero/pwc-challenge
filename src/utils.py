@@ -1,4 +1,61 @@
 from pathlib import Path
 
-_proj_path = Path(__file__).parents[1]
-sqlite_db_path = _proj_path / 'local.db'
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+proj_path = Path(__file__).parents[1]
+
+
+class DBConnector:
+    """Abstraction of the relational DB Connection"""
+    url: str
+    def __init__(self):
+        self._engine = None
+        self._session = None
+
+    def get_engine(self):
+        if not self._engine:
+            self._engine = create_engine(self.url, echo=True)
+        return self._engine
+
+    def get_session(self):
+        if not self._session:
+            self._session = Session(self.get_engine())
+        return self._session
+
+
+class LocalSQLiteRaw(DBConnector):
+    url: str = f"sqlite:///{proj_path}/raw.db"
+
+
+class LocalSQLiteDW(DBConnector):
+    url: str = f"sqlite:///{proj_path}/dw.db"
+
+
+class _DBProvider:
+    def __init__(self):
+        self.raw = LocalSQLiteRaw()
+        self.dw = LocalSQLiteDW()
+
+
+class _TypesenseProvider:
+    def __init__(self):
+        self._client = None
+
+    def get_client(self):
+        if not self._client:
+            import typesense
+            self._client = typesense.Client({
+                'nodes': [{
+                    'host': 'localhost',
+                    'port': '8108',
+                    'protocol': 'http'
+                }],
+                'api_key': 'xyz',
+                'connection_timeout_seconds': 10
+            })
+        return self._client
+
+
+DBProvider = _DBProvider()
+TypesenseProvider = _TypesenseProvider()
