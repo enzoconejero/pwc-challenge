@@ -1,6 +1,7 @@
 import json
+
 from sqlalchemy import Column, String, Integer, ForeignKey
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class RawDB(DeclarativeBase):
@@ -52,14 +53,18 @@ class SaleHistory(RawDB):
 
         return self
 
-class FactSales(RawDB):
-    __tablename__ = 'fact_sales'
-    game_id = mapped_column(ForeignKey('dim_game.id'), primary_key=True)
-    platform_id = mapped_column(ForeignKey('dim_platform.id'), primary_key=True)
-    year_id = mapped_column(ForeignKey('dim_year.id'), primary_key=True)
-    total_sales = Column(Integer, nullable=False)
+    def as_fact(self):
+        year = DimYear(year=self.year)
+        game = DimGame(name=self.name, genre=self.genre, publisher=self.publisher, rank=self.rank)
+        platform = DimPlatform(name=self.platform)
+        fact = FactSales(year=year, game=game, platform=platform, total_sales=self.global_sales)
+        return fact
 
-class DimGame(RawDB):
+
+class DataWarehouse(DeclarativeBase):
+    pass
+
+class DimGame(DataWarehouse):
     __tablename__ = 'dim_game'
     id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String)
@@ -67,7 +72,7 @@ class DimGame(RawDB):
     publisher: Mapped[str] = mapped_column(String)
     rank: Mapped[int] = mapped_column(Integer)
 
-class DimPlatform(RawDB):
+class DimPlatform(DataWarehouse):
     __tablename__ = 'dim_platform'
     id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String)
@@ -75,7 +80,29 @@ class DimPlatform(RawDB):
     def __repr__(self):
         return f'Platform({self.name})'
 
-class DimYear(RawDB):
+class DimYear(DataWarehouse):
     __tablename__ = 'dim_year'
     id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
     year: Mapped[int] = mapped_column(Integer)
+
+class FactSales(DataWarehouse):
+    __tablename__ = 'fact_sales'
+    game_id = mapped_column(ForeignKey('dim_game.id'), primary_key=True)
+    platform_id = mapped_column(ForeignKey('dim_platform.id'), primary_key=True)
+    year_id = mapped_column(ForeignKey('dim_year.id'), primary_key=True)
+    total_sales = Column(Integer, nullable=False)
+
+    platform = relationship(DimPlatform)
+    year = relationship(DimYear)
+    game = relationship(DimGame)
+
+    def as_search_doc(self):
+        return {
+            'game': self.game.name,
+            'publisher': self.game.publisher,
+            'rank': self.game.rank,
+            'platform': self.platform.name,
+            'year': self.year.year,
+            'total_sales': self.total_sales,
+            'description': f'{self.game.name} ({self.year.year}) - {self.platform.name}',
+        }

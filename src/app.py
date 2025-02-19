@@ -1,7 +1,7 @@
 
 from fastapi import FastAPI
 
-from src.etls import etl_raw, etl_dw
+from src.etls import etl_raw, etl_dw, update_search_engine, update_dw
 from src.model import SaleHistory
 from src.utils import DBProvider, TypesenseProvider
 
@@ -60,9 +60,11 @@ def add_sale(sale: dict):
         )
 
         db_session.add(sale_reg)
+
     db_session.commit()
-    print(sale_reg)
-    print('return', sale_reg.as_json())
+    update_dw(sale_reg.id)
+    # print(sale_reg)
+    # print('return', sale_reg.as_json())
     return sale_reg.as_json()
 
 @app.get('/sales/{_id}')
@@ -87,6 +89,11 @@ def search(query):
     results = TypesenseProvider.get_client().collections["games_sales"].documents.search(search_params)
     response = {r["document"]["description"] for r in results["hits"]}
     return response
+
+@app.post("/search/sync/")
+def search_sync():
+    update_dw()
+    return {'DW and SearchEngine synced'}
 
 @app.get("/")
 def home():
