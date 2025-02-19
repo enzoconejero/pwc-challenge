@@ -9,7 +9,7 @@ from src.model import SaleHistory, RawDB, FactSales, DataWarehouse
 from src.utils import DBProvider, TypesenseProvider
 
 def etl_raw():
-    """Download raw data from Kaggle and load into relational DB"""
+    """Download raw data from Kaggle and load into Raw DB"""
     kaggle_path = Path(kagglehub.dataset_download("gregorut/videogamesales"))
     csv_path = kaggle_path / os.listdir(kaggle_path)[0]
 
@@ -21,6 +21,8 @@ def etl_raw():
 
     # Filter years
     df = df.filter(df['Year'].is_not_null()).rename(lambda x: x.lower())
+
+    # Delete some duplicates (same game, year and platform with different rank)
     df = (
         df.group_by('name', 'year', 'platform')
         .agg(
@@ -42,7 +44,7 @@ def etl_raw():
     session.commit()
 
 def etl_dw():
-    """Load the Data Warehouse"""
+    """Load the Star Schema into the Data Warehouse"""
     dw_engine = DBProvider.dw.get_engine()
 
     raw_session = DBProvider.raw.get_session()
@@ -61,6 +63,7 @@ def etl_dw():
 
 
 def etl_vectordb():
+    """Creates the search schema in Typesense and syncs with DataWarehouse"""
     typesense_client = TypesenseProvider.get_client()
 
     if 'games_sales' not in [c['name'] for c in typesense_client.collections.retrieve()]:
@@ -85,7 +88,9 @@ def etl_vectordb():
 
 
 def update_dw(game_id=None):
-    """If not ID is provided then update all the facts"""
+    """Sync the DW with the data in Raw. Commonly used when a new SaleHistory is added
+    > If no ID is provided then update all the facts
+    """
     raw_session = DBProvider.raw.get_session()
     dw_session = DBProvider.dw.get_session()
     query = raw_session.query(SaleHistory)
@@ -97,13 +102,14 @@ def update_dw(game_id=None):
     dw_session.add_all(facts)
     dw_session.commit()
 
+    # Update search_engine
     if game_id:
         update_search_engine(facts[0].game_id)
     else:
         update_search_engine()
 
 def update_search_engine(game_id=None):
-    """If not ID is provided then update all the facts"""
+    """If no ID is provided then update all the facts"""
     session = DBProvider.dw.get_session()
     query = session.query(FactSales)
     if game_id:

@@ -7,7 +7,14 @@ proj_path = Path(__file__).parents[1]
 
 
 class DBConnector:
-    """Abstraction of the relational DB Connection"""
+    """Abstraction of the relational DB Connection
+    To set up a testing DB:
+    >>>> class TestDB(DBConnector):
+    >>>>    url: str = f"sqlite:///{proj_path}/test_raw.db"
+    >>>>
+    >>>> DBProvider.raw = TestDB()
+    Accept all type of connection (even non-local) as long as the method get_engine is overwritted
+    """
     url: str
     def __init__(self):
         self._engine = None
@@ -33,12 +40,16 @@ class LocalSQLiteDW(DBConnector):
 
 
 class _DBProvider:
+    """Singleton provider of the DBs"""
     def __init__(self):
         self.raw = LocalSQLiteRaw()
         self.dw = LocalSQLiteDW()
 
 
 class _TypesenseProvider:
+    """Singleton provider of the TypesenseClient
+    TODO: start service from this class
+    """
     def __init__(self):
         self._client = None
 

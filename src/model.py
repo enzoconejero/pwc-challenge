@@ -26,6 +26,7 @@ class SaleHistory(RawDB):
         return f'{self.__class__.__name__}({self.name}, {self.platform})'
 
     def as_json(self):
+        """Return the values as a json. Useful for the API"""
         param = self.__dict__.copy()
         param.pop('_sa_instance_state')
         return param
@@ -33,16 +34,8 @@ class SaleHistory(RawDB):
     def as_json_string(self):
         return json.dumps(self.as_json())
 
-    def select_statement(self, with_id=False):
-        if with_id:
-            return f'SELECT * FROM {self.__tablename__} where id = {self.id}'
-        else:
-            return (f'SELECT * FROM {self.__tablename__} where '
-                    f'name = {self.name} '
-                    f'AND year = {self.year} '
-                    f'AND platform = {self.platform}')
-
     def update_values(self, values: dict):
+        """Update attrs from a dict (the way they provided by an API POST)"""
         alterable_attrs = self.__dict__.copy()
         alterable_attrs.pop('id')
         alterable_attrs.pop('_sa_instance_state')
@@ -97,6 +90,7 @@ class FactSales(DataWarehouse):
     game = relationship(DimGame)
 
     def as_search_doc(self):
+        """Structure used for Typesense to search"""
         return {
             'game': self.game.name,
             'publisher': self.game.publisher,

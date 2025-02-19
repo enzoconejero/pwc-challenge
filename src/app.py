@@ -1,7 +1,7 @@
 
 from fastapi import FastAPI
 
-from src.etls import etl_raw, etl_dw, update_search_engine, update_dw
+from src.etls import etl_raw, etl_dw, update_dw
 from src.model import SaleHistory
 from src.utils import DBProvider, TypesenseProvider
 
@@ -9,20 +9,24 @@ app = FastAPI()
 
 @app.get("/health")
 def health():
+    """Check if it's running"""
     return {'Hello World'}
 
 @app.post('/load_raw')
 def load_raw():
+    """Trigger the ETL of the RAW data"""
     etl_raw()
     return {'Raw loaded'}
 
 @app.post('/load_datawarehouse')
 def load_raw():
+    """Trigger the ETL of the DataWarehouse"""
     etl_dw()
     return {'Data Warehouse loaded'}
 
 @app.get("/show_raw")
 def show_raw():
+    """Show a sample of the RawData"""
     sample = DBProvider.raw.get_session().query(SaleHistory).limit(10).all()
     return {
         'sample_size': len(sample),
@@ -31,6 +35,7 @@ def show_raw():
 
 @app.post('/sales/')
 def add_sale(sale: dict):
+    """Add or Update a sale"""
     print('On add sale')
     db_session = DBProvider.raw.get_session()
 
@@ -69,11 +74,13 @@ def add_sale(sale: dict):
 
 @app.get('/sales/{_id}')
 def get_sale(_id):
+    """Return an existent sale"""
     sale = DBProvider.raw.get_session().query(SaleHistory).where(SaleHistory.id == _id).first()
     return sale.as_json()
 
 @app.delete("/sales/{_id}")
 def delete_sale(_id):
+    """Removes an existent sale"""
     session = DBProvider.raw.get_session()
     session.query(SaleHistory).where(SaleHistory.id == _id).delete()
     session.commit()
@@ -81,6 +88,7 @@ def delete_sale(_id):
 
 @app.get("/search/{query}")
 def search(query):
+    """Search through Typesense"""
     search_params = {
         'q': query,
         'query_by': 'description',
@@ -92,6 +100,7 @@ def search(query):
 
 @app.post("/search/sync/")
 def search_sync():
+    """Syncs the DataWarehouse with Typesense engine"""
     update_dw()
     return {'DW and SearchEngine synced'}
 
