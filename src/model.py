@@ -1,3 +1,4 @@
+import json
 from sqlalchemy import Column, String, Integer, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -22,6 +23,34 @@ class SaleHistory(RawDB):
 
     def __repr__(self):
         return f'{self.__class__.__name__}({self.name}, {self.platform})'
+
+    def as_json(self):
+        param = self.__dict__.copy()
+        param.pop('_sa_instance_state')
+        return param
+
+    def as_json_string(self):
+        return json.dumps(self.as_json())
+
+    def select_statement(self, with_id=False):
+        if with_id:
+            return f'SELECT * FROM {self.__tablename__} where id = {self.id}'
+        else:
+            return (f'SELECT * FROM {self.__tablename__} where '
+                    f'name = {self.name} '
+                    f'AND year = {self.year} '
+                    f'AND platform = {self.platform}')
+
+    def update_values(self, values: dict):
+        alterable_attrs = self.__dict__.copy()
+        alterable_attrs.pop('id')
+        alterable_attrs.pop('_sa_instance_state')
+
+        for attr, value in values.items():
+            if attr in alterable_attrs and getattr(self, attr) != value:
+                setattr(self, attr, value)
+
+        return self
 
 class FactSales(RawDB):
     __tablename__ = 'fact_sales'
@@ -50,4 +79,3 @@ class DimYear(RawDB):
     __tablename__ = 'dim_year'
     id: Mapped[int] = Column(Integer, primary_key=True, autoincrement=True)
     year: Mapped[int] = mapped_column(Integer)
-
